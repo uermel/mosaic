@@ -461,6 +461,10 @@ class DataContainerInteractor(QObject):
         export_menu.triggered.connect(lambda: self._handle_export())
         context_menu.addAction(export_menu)
 
+        export_copick_action = QAction("Export to Copick...", self.data_list)
+        export_copick_action.triggered.connect(lambda: self._handle_copick_export())
+        context_menu.addAction(export_copick_action)
+
         properties_action = QAction("Properties", self.data_list)
         properties_action.triggered.connect(self._show_properties_dialog)
         context_menu.addAction(properties_action)
@@ -535,6 +539,83 @@ class DataContainerInteractor(QObject):
         except Exception as e:
             QMessageBox.warning(None, "Error", str(e))
         return None
+
+    def _handle_copick_export(self):
+        try:
+            from .copick_integration import (
+                CopickBrowserDialog,
+                geometry_to_copick_picks,
+                geometry_to_copick_mesh,
+                geometry_to_copick_segmentation,
+            )
+        except ImportError:
+            QMessageBox.warning(
+                None,
+                "Missing Dependency",
+                "copick is not installed. Install with: pip install mosaic-gui[copick]",
+            )
+            return
+
+        geometries = self.get_selected_geometries()
+        if not geometries:
+            return
+
+        has_mesh = any(
+            hasattr(g.model, "mesh") for g in geometries if g.model is not None
+        )
+        has_seg = any(g._representation == "segmentation" for g in geometries)
+
+        dialog = CopickBrowserDialog(
+            parent=None,
+            mode="export",
+            geometry_types={
+                "picks": True,
+                "mesh": has_mesh,
+                "segmentation": has_seg,
+            },
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        export_config = dialog.get_result()
+        run = export_config["run"]
+        object_name = export_config["object_name"]
+        user_id = export_config["user_id"]
+        session_id = export_config["session_id"]
+        data_type = export_config["data_type"]
+
+        try:
+            if data_type == "picks":
+                for g in geometries:
+                    geometry_to_copick_picks(g, run, object_name, session_id, user_id)
+            elif data_type == "mesh":
+                for g in geometries:
+                    if g.model is not None and hasattr(g.model, "mesh"):
+                        geometry_to_copick_mesh(
+                            g, run, object_name, session_id, user_id
+                        )
+            elif data_type == "segmentation":
+                voxel_size = export_config["voxel_size"]
+                is_multilabel = export_config["is_multilabel"]
+                for g in geometries:
+                    if g._representation == "segmentation":
+                        geometry_to_copick_segmentation(
+                            g,
+                            run,
+                            object_name,
+                            session_id,
+                            user_id,
+                            voxel_size,
+                            is_multilabel,
+                        )
+
+            QMessageBox.information(
+                None, "Export Complete", "Data exported to copick successfully."
+            )
+        except Exception as e:
+            QMessageBox.warning(
+                None, "Export Error", f"Failed to export to copick:\n{e}"
+            )
 
     def _show_properties_dialog(self) -> int:
         from .dialogs import GeometryPropertiesDialog
