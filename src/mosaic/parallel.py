@@ -173,8 +173,6 @@ def _wrap_task(func, task_id, *args, **kwargs):
 
     This runs in the worker process for each task.
     """
-    import traceback
-
     global _worker_task_id
 
     _worker_task_id = task_id
@@ -202,15 +200,6 @@ def _wrap_task(func, task_id, *args, **kwargs):
                 "result": result,
                 "warnings": warning_msg.rstrip() if warning_msg else None,
             }
-    except BaseException:
-        # Send traceback through the queue before re-raising so it survives
-        # even if the worker process dies during serialization.
-        try:
-            sys.stderr.write(traceback.format_exc())
-            sys.stderr.flush()
-        except Exception:
-            pass
-        raise
     finally:
         try:
             sys.stdout.flush()
@@ -568,29 +557,14 @@ class BackgroundTaskManager(QObject):
                     if warnings_msg is not None:
                         self.task_warning.emit(task_id, task_name, warnings_msg)
 
-                except concurrent.futures.process.BrokenProcessPool:
-                    # The worker process died. The traceback was written to
-                    # stderr inside _wrap_task before re-raising, so check
-                    # if the queue captured it.
-                    captured = "".join(self._task_stderr.get(task_id, []))
-                    if captured.strip():
-                        error_msg = captured.rstrip()
-                    else:
-                        error_msg = (
-                            "Worker process died unexpectedly "
-                            "(no traceback available — likely a native crash "
-                            "or out-of-memory kill)."
-                        )
+                except concurrent.futures.process.BrokenProcessPool as e:
+                    error_msg = f"Worker process died unexpectedly: {str(e)}"
                     task_info["error"] = error_msg
                     self.task_failed.emit(task_id, task_name, error_msg)
                     executor_broken = True
 
                 except Exception as e:
-                    import traceback
-
-                    error_msg = "".join(
-                        traceback.format_exception(type(e), e, e.__traceback__)
-                    )
+                    error_msg = str(e)
                     task_info["error"] = error_msg
                     self.task_failed.emit(task_id, task_name, error_msg)
 
