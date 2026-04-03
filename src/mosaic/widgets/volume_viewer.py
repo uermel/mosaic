@@ -54,14 +54,11 @@ class VolumeViewer(QWidget):
         self.open_button.clicked.connect(self.open_volume)
 
         self.copick_button = None
-        try:
-            from ..copick_integration import is_copick_available
+        from ..copick_integration import HAS_COPICK
 
-            if is_copick_available():
-                self.copick_button = QPushButton("Copick")
-                self.copick_button.clicked.connect(self.open_copick_tomogram)
-        except ImportError:
-            pass
+        if HAS_COPICK:
+            self.copick_button = QPushButton("Copick")
+            self.copick_button.clicked.connect(self.open_copick_tomogram)
 
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close_volume)
@@ -293,34 +290,19 @@ class VolumeViewer(QWidget):
         if self.volume is not None:
             self.close_volume()
 
-        from ..copick_integration import CopickTomogramDialog
+        from ..copick_integration import show_tomogram_dialog
 
-        dialog = CopickTomogramDialog(parent=self)
-        if dialog.exec() != dialog.DialogCode.Accepted:
+        result = show_tomogram_dialog(self)
+        if result is None:
             return
 
-        result = dialog.get_result()
-        tomogram = result["tomogram"]
-        voxel_spacing = result["voxel_spacing"]
-        if tomogram is None or voxel_spacing is None:
-            return
-
-        try:
-            self.load_copick_tomogram(tomogram, voxel_spacing.voxel_size)
-        except Exception as e:
-            print(f"Error loading copick tomogram: {e}")
-
-    def load_copick_tomogram(self, tomogram, voxel_size):
-        # Copick returns (Z, Y, X); transpose to match mosaic's axis order.
-        data = tomogram.numpy().T.astype(np.float32)
-        self._source_path = f"copick://{tomogram.tomo_type}"
-
+        self._source_path = result.source_path
         self.volume = vtk.vtkImageData()
-        self.volume.SetDimensions(data.shape)
-        self.volume.SetSpacing(voxel_size, voxel_size, voxel_size)
+        self.volume.SetDimensions(result.data.shape)
+        self.volume.SetSpacing(result.voxel_size, result.voxel_size, result.voxel_size)
 
         vtk_arr = numpy_support.numpy_to_vtk(
-            data.ravel(order="F"), deep=True, array_type=vtk.VTK_FLOAT
+            result.data.ravel(order="F"), deep=True, array_type=vtk.VTK_FLOAT
         )
         self.volume.GetPointData().SetScalars(vtk_arr)
         self.swap_volume(self.volume)

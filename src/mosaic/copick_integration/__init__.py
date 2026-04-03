@@ -24,6 +24,13 @@ from ._uri import (
 )
 from ._dialog import CopickBrowserDialog, CopickTomogramDialog
 from ._session import CopickSession
+from ._actions import (
+    ImportResult,
+    TomogramResult,
+    export_geometries,
+    show_import_dialog,
+    show_tomogram_dialog,
+)
 
 
 def is_copick_available():
@@ -34,6 +41,9 @@ def is_copick_available():
         return True
     except ImportError:
         return False
+
+
+HAS_COPICK = is_copick_available()
 
 
 __all__ = [
@@ -50,4 +60,10 @@ __all__ = [
     "CopickTomogramDialog",
     "CopickSession",
     "is_copick_available",
+    "HAS_COPICK",
+    "show_import_dialog",
+    "export_geometries",
+    "show_tomogram_dialog",
+    "ImportResult",
+    "TomogramResult",
 ]
