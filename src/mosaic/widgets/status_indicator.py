@@ -296,6 +296,11 @@ class TaskCard(QFrame):
 
     def _update_output(self):
         output = ""
+
+        error = self.task_data.get("error", "")
+        if error:
+            output += f"--- ERROR ---\n\n{error}\n\n"
+
         stdout = "".join(self._stdout_buffer) or self.task_data.get("stdout", "")
         if stdout:
             output += f"--- STDOUT ---\n\n{stdout}\n"
@@ -390,6 +395,7 @@ class TaskMonitorDialog(QDialog):
             return
 
         card.task_data["status"] = "failed"
+        card.task_data["error"] = error
         card.status = "failed"
         card.status_badge.setText("FAILED")
         card._update_styling()

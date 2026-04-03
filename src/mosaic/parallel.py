@@ -559,11 +559,13 @@ class BackgroundTaskManager(QObject):
 
                 except concurrent.futures.process.BrokenProcessPool as e:
                     error_msg = f"Worker process died unexpectedly: {str(e)}"
+                    task_info["error"] = error_msg
                     self.task_failed.emit(task_id, task_name, error_msg)
                     executor_broken = True
 
                 except Exception as e:
                     error_msg = str(e)
+                    task_info["error"] = error_msg
                     self.task_failed.emit(task_id, task_name, error_msg)
 
                 if batch_id is not None and batch_id in self.batch_running:
@@ -578,7 +580,7 @@ class BackgroundTaskManager(QObject):
 
             if task_id in self.task_info:
                 task_info = self.task_info.pop(task_id)
-                _keys = ("stdout", "stderr", "status", "name")
+                _keys = ("stdout", "stderr", "status", "name", "error")
                 self.task_info[task_id] = {k: task_info.get(k) for k in _keys}
 
         if executor_broken:
