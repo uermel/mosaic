@@ -341,14 +341,23 @@ class Session:
             Index and exception for each failed geometry.
         """
         workers = int(kwargs.pop("workers", 1))
+
+        results = [None] * len(geometries)
+        errors = []
+
+        if workers <= 1:
+            for i, g in enumerate(geometries):
+                try:
+                    results[i] = func(g, **kwargs)
+                except Exception as exc:
+                    errors.append((i, exc))
+            return results, errors
+
         pool = ProcessPoolExecutor(max_workers=workers, initializer=_init_worker)
         futures = {
             pool.submit(_wrap_task, func, None, g, **kwargs): i
             for i, g in enumerate(geometries)
         }
-
-        results = [None] * len(geometries)
-        errors = []
 
         from rich.progress import (
             Progress,
