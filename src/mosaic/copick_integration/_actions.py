@@ -166,10 +166,14 @@ def show_tomogram_dialog(parent) -> Optional[TomogramResult]:
     if tomogram is None or voxel_spacing is None:
         return None
 
-    # Copick returns (Z, Y, X); transpose to match mosaic's axis order.
-    data = tomogram.numpy().T.astype(np.float32)
+    # Read the requested OME-Zarr resolution level and transpose from
+    # copick's (Z, Y, X) axis order to mosaic's (X, Y, Z).
+    # Each binning level doubles the voxel size (level 0 = 1x, 1 = 2x, 2 = 4x).
+    binning_level = result["binning_level"]
+    data = tomogram.numpy(zarr_group=str(binning_level)).T.astype(np.float32)
+    voxel_size = voxel_spacing.voxel_size * (2 ** binning_level)
     return TomogramResult(
         data=data,
-        voxel_size=voxel_spacing.voxel_size,
+        voxel_size=voxel_size,
         source_path=f"copick://{tomogram.tomo_type}",
     )

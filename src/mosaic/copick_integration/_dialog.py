@@ -51,9 +51,11 @@ def _setup_config_panel(dialog, content_layout):
 
     browse_button = QPushButton(qta.icon("ph.folder-open", color=Colors.ICON), "")
     browse_button.setFixedWidth(36)
+    browse_button.setAutoDefault(False)
     browse_button.clicked.connect(dialog._browse_config)
 
     dialog._connect_button = QPushButton("Connect")
+    dialog._connect_button.setAutoDefault(False)
     dialog._connect_button.clicked.connect(dialog._connect)
 
     config_layout.addWidget(dialog._config_input, 1)
@@ -122,6 +124,12 @@ class CopickBrowserDialog(QDialog):
         run_group = QGroupBox("Run")
         run_layout = QHBoxLayout(run_group)
         self._run_combo = QComboBox()
+        self._run_combo.setEditable(True)
+        self._run_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._run_combo.completer().setFilterMode(Qt.MatchContains)
+        self._run_combo.lineEdit().returnPressed.connect(
+            self._run_combo.lineEdit().clearFocus
+        )
         self._run_combo.setEnabled(False)
         self._run_combo.currentIndexChanged.connect(self._on_run_changed)
         run_layout.addWidget(self._run_combo)
@@ -142,6 +150,8 @@ class CopickBrowserDialog(QDialog):
         icon_name = "ph.upload" if self._mode == "import" else "ph.download"
         self._action_button.setIcon(qta.icon(icon_name, color=Colors.PRIMARY))
         self._action_button.setEnabled(False)
+        self._action_button.setAutoDefault(False)
+        footer.reject_button.setAutoDefault(False)
         main_layout.addWidget(footer)
 
     def _setup_import_panel(self, parent_layout):
@@ -564,6 +574,12 @@ class CopickTomogramDialog(QDialog):
         run_group = QGroupBox("Run")
         run_layout = QHBoxLayout(run_group)
         self._run_combo = QComboBox()
+        self._run_combo.setEditable(True)
+        self._run_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._run_combo.completer().setFilterMode(Qt.MatchContains)
+        self._run_combo.lineEdit().returnPressed.connect(
+            self._run_combo.lineEdit().clearFocus
+        )
         self._run_combo.setEnabled(False)
         self._run_combo.currentIndexChanged.connect(self._on_run_changed)
         run_layout.addWidget(self._run_combo)
@@ -587,8 +603,20 @@ class CopickTomogramDialog(QDialog):
         tomo_row.addWidget(QLabel("Tomogram Type:"))
         self._tomo_combo = QComboBox()
         self._tomo_combo.setEnabled(False)
+        self._tomo_combo.currentIndexChanged.connect(self._on_tomo_changed)
         tomo_row.addWidget(self._tomo_combo, 1)
         settings_layout.addLayout(tomo_row)
+
+        # Zarr binning level
+        bin_row = QHBoxLayout()
+        bin_row.addWidget(QLabel("Binning Level:"))
+        self._bin_combo = QComboBox()
+        self._bin_combo.setEnabled(False)
+        self._bin_combo.setToolTip(
+            "OME-Zarr resolution level (0 = full, higher = more binned)"
+        )
+        bin_row.addWidget(self._bin_combo, 1)
+        settings_layout.addLayout(bin_row)
 
         content_layout.addWidget(settings_group)
         content_layout.addStretch()
@@ -602,6 +630,8 @@ class CopickTomogramDialog(QDialog):
             qta.icon("ph.upload", color=Colors.PRIMARY)
         )
         self._action_button.setEnabled(False)
+        self._action_button.setAutoDefault(False)
+        footer.reject_button.setAutoDefault(False)
         main_layout.addWidget(footer)
 
     def _browse_config(self):
@@ -675,12 +705,39 @@ class CopickTomogramDialog(QDialog):
         vs = self._voxel_spacings[index]
         self._tomograms = list(vs.tomograms)
 
+        self._tomo_combo.blockSignals(True)
         self._tomo_combo.setEnabled(True)
         self._tomo_combo.clear()
         for tomo in self._tomograms:
             self._tomo_combo.addItem(tomo.tomo_type)
+        self._tomo_combo.blockSignals(False)
 
         self._action_button.setEnabled(len(self._tomograms) > 0)
+
+        if self._tomograms:
+            self._on_tomo_changed(0)
+
+    def _on_tomo_changed(self, index):
+        if index < 0 or index >= len(self._tomograms):
+            return
+
+        import zarr
+
+        tomo = self._tomograms[index]
+        self._bin_combo.clear()
+        try:
+            group = zarr.open(tomo.zarr(), mode="r")
+            levels = sorted(int(k) for k in group.keys() if k.isdigit())
+            for lvl in levels:
+                self._bin_combo.addItem(str(lvl))
+            # Default to the highest available level
+            self._bin_combo.setCurrentIndex(self._bin_combo.count() - 1)
+        except Exception:
+            # Fallback if we cannot probe the store
+            for lvl in range(3):
+                self._bin_combo.addItem(str(lvl))
+            self._bin_combo.setCurrentIndex(2)
+        self._bin_combo.setEnabled(True)
 
     def get_result(self):
         """Return the selected tomogram details.
@@ -688,14 +745,16 @@ class CopickTomogramDialog(QDialog):
         Returns
         -------
         dict
-            {"run", "voxel_spacing", "tomogram"}
+            {"run", "voxel_spacing", "tomogram", "binning_level"}
         """
         run_idx = self._run_combo.currentIndex()
         vs_idx = self._vs_combo.currentIndex()
         tomo_idx = self._tomo_combo.currentIndex()
+        bin_idx = self._bin_combo.currentIndex()
 
         return {
             "run": self._runs[run_idx] if run_idx >= 0 else None,
             "voxel_spacing": self._voxel_spacings[vs_idx] if vs_idx >= 0 else None,
             "tomogram": self._tomograms[tomo_idx] if tomo_idx >= 0 else None,
+            "binning_level": int(self._bin_combo.currentText()) if bin_idx >= 0 else 0,
         }
