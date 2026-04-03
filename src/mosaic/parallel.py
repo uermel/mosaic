@@ -201,18 +201,16 @@ def _wrap_task(func, task_id, *args, **kwargs):
             return {
                 "result": result,
                 "warnings": warning_msg.rstrip() if warning_msg else None,
-                "error": None,
             }
-    except Exception:
-        # Return the formatted traceback as a plain string instead of
-        # re-raising. Re-raised exceptions must be pickled back to the main
-        # process; if pickling fails the worker dies and the traceback is
-        # lost (BrokenProcessPool). A plain string is always picklable.
-        return {
-            "result": None,
-            "warnings": None,
-            "error": traceback.format_exc(),
-        }
+    except BaseException:
+        # Send traceback through the queue before re-raising so it survives
+        # even if the worker process dies during serialization.
+        try:
+            sys.stderr.write(traceback.format_exc())
+            sys.stderr.flush()
+        except Exception:
+            pass
+        raise
     finally:
         try:
             sys.stdout.flush()
@@ -555,42 +553,34 @@ class BackgroundTaskManager(QObject):
                 try:
                     ret = future.result()
 
-                    if ret.get("error"):
-                        error_msg = ret["error"]
-                        task_info["stdout"] = "".join(
-                            self._task_stdout.get(task_id, [])
-                        )
-                        task_info["stderr"] = "".join(
-                            self._task_stderr.get(task_id, [])
-                        )
-                        task_info["error"] = error_msg
-                        self.task_failed.emit(task_id, task_name, error_msg)
-                    else:
-                        result = ret["result"]
-                        warnings_msg = ret["warnings"]
+                    result = ret["result"]
+                    warnings_msg = ret["warnings"]
 
-                        task_info["status"] = "completed"
-                        task_info["stdout"] = "".join(
-                            self._task_stdout.get(task_id, [])
-                        )
-                        task_info["stderr"] = "".join(
-                            self._task_stderr.get(task_id, [])
-                        )
+                    task_info["status"] = "completed"
+                    task_info["stdout"] = "".join(self._task_stdout.get(task_id, []))
+                    task_info["stderr"] = "".join(self._task_stderr.get(task_id, []))
 
-                        self.task_completed.emit(task_id, task_name, result)
+                    self.task_completed.emit(task_id, task_name, result)
 
-                        if task_info["callback"]:
-                            task_info["callback"](result)
+                    if task_info["callback"]:
+                        task_info["callback"](result)
 
-                        if warnings_msg is not None:
-                            self.task_warning.emit(task_id, task_name, warnings_msg)
+                    if warnings_msg is not None:
+                        self.task_warning.emit(task_id, task_name, warnings_msg)
 
                 except concurrent.futures.process.BrokenProcessPool:
-                    error_msg = (
-                        "Worker process died unexpectedly "
-                        "(no traceback available — likely a native crash "
-                        "or out-of-memory kill)."
-                    )
+                    # The worker process died. The traceback was written to
+                    # stderr inside _wrap_task before re-raising, so check
+                    # if the queue captured it.
+                    captured = "".join(self._task_stderr.get(task_id, []))
+                    if captured.strip():
+                        error_msg = captured.rstrip()
+                    else:
+                        error_msg = (
+                            "Worker process died unexpectedly "
+                            "(no traceback available — likely a native crash "
+                            "or out-of-memory kill)."
+                        )
                     task_info["error"] = error_msg
                     self.task_failed.emit(task_id, task_name, error_msg)
                     executor_broken = True
