@@ -85,12 +85,17 @@ def geometry_to_copick_mesh(geometry, run, object_name, session_id, user_id):
 def geometry_to_copick_segmentation(
     geometry, run, name, session_id, user_id, voxel_size, is_multilabel=False
 ):
-    """Export a mosaic SegmentationGeometry as a copick segmentation.
+    """Export a mosaic Geometry as a copick segmentation.
+
+    Converts the geometry's point cloud to a binary volume using
+    *voxel_size* as the sampling rate, then stores it in the copick run.
+    Works with both regular point-set Geometries and SegmentationGeometry
+    objects.
 
     Parameters
     ----------
-    geometry : SegmentationGeometry
-        Mosaic segmentation geometry.
+    geometry : Geometry or SegmentationGeometry
+        Mosaic geometry with points.
     run : CopickRun
         Target copick run.
     name : str
@@ -100,7 +105,8 @@ def geometry_to_copick_segmentation(
     user_id : str
         User identifier.
     voxel_size : float
-        Voxel size in angstroms.
+        Voxel size in angstroms.  Used both as the sampling rate for the
+        point-to-volume conversion and as metadata stored in copick.
     is_multilabel : bool
         Whether the segmentation is multilabel.
 
@@ -112,9 +118,7 @@ def geometry_to_copick_segmentation(
     from ..utils import points_to_volume
 
     points = geometry.points
-    sampling = float(np.max(geometry.sampling_rate))
-
-    volume = points_to_volume(points, sampling_rate=sampling, out_dtype=np.uint8)
+    volume = points_to_volume(points, sampling_rate=voxel_size, out_dtype=np.uint8)
 
     seg = run.new_segmentation(
         voxel_size=voxel_size,

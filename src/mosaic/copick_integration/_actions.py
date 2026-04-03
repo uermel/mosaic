@@ -64,11 +64,26 @@ def show_import_dialog(parent) -> Optional[ImportResult]:
     result = dialog.get_result()
     out = ImportResult()
 
+    # Build a name → colour lookup from copick pickable objects.
+    color_map = {}
+    root = result.get("root")
+    if root is not None:
+        for obj in root.pickable_objects:
+            if obj.color is not None:
+                c = obj.color[:3]
+                color_map[obj.name] = tuple(
+                    v / 255 if max(c) > 1 else v for v in c
+                )
+
     for picks in result["picks"]:
         out.picks.append(copick_picks_to_geometry_data(picks))
 
     for mesh in result["meshes"]:
-        out.meshes.append(copick_mesh_to_geometry_data(mesh))
+        d = copick_mesh_to_geometry_data(mesh)
+        color = color_map.get(mesh.pickable_object_name)
+        if color is not None:
+            d["color"] = color
+        out.meshes.append(d)
 
     for seg in result["segmentations"]:
         from ..geometry import SegmentationGeometry
@@ -93,7 +108,7 @@ def export_geometries(parent, geometries) -> bool:
     has_mesh = any(
         hasattr(g.model, "mesh") for g in geometries if g.model is not None
     )
-    has_seg = any(g._representation == "segmentation" for g in geometries)
+    default_voxel_size = float(np.max(geometries[0].sampling_rate))
 
     dialog = CopickBrowserDialog(
         parent=parent,
@@ -101,8 +116,9 @@ def export_geometries(parent, geometries) -> bool:
         geometry_types={
             "picks": True,
             "mesh": has_mesh,
-            "segmentation": has_seg,
+            "segmentation": True,
         },
+        default_voxel_size=default_voxel_size,
     )
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return False
@@ -128,16 +144,15 @@ def export_geometries(parent, geometries) -> bool:
             voxel_size = config["voxel_size"]
             is_multilabel = config["is_multilabel"]
             for g in geometries:
-                if g._representation == "segmentation":
-                    geometry_to_copick_segmentation(
-                        g,
-                        run,
-                        object_name,
-                        session_id,
-                        user_id,
-                        voxel_size,
-                        is_multilabel,
-                    )
+                geometry_to_copick_segmentation(
+                    g,
+                    run,
+                    object_name,
+                    session_id,
+                    user_id,
+                    voxel_size,
+                    is_multilabel,
+                )
 
         QMessageBox.information(
             parent, "Export Complete", "Data exported to copick successfully."

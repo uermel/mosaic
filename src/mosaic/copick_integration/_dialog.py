@@ -77,11 +77,12 @@ class CopickBrowserDialog(QDialog):
         For export mode, dict of {type: bool} indicating which types are available.
     """
 
-    def __init__(self, parent=None, mode="import", geometry_types=None):
+    def __init__(self, parent=None, mode="import", geometry_types=None, default_voxel_size=10.0):
         super().__init__(parent)
 
         self._mode = mode
         self._geometry_types = geometry_types or {}
+        self._default_voxel_size = default_voxel_size
         self._root = None
         self._runs = []
         self._selected_run = None
@@ -274,7 +275,7 @@ class CopickBrowserDialog(QDialog):
         self._voxel_spin = QDoubleSpinBox()
         self._voxel_spin.setRange(0.01, 10000)
         self._voxel_spin.setDecimals(2)
-        self._voxel_spin.setValue(10.0)
+        self._voxel_spin.setValue(self._default_voxel_size)
         voxel_row.addWidget(self._voxel_spin, 1)
         seg_layout.addLayout(voxel_row)
 

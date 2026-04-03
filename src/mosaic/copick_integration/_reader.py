@@ -84,6 +84,9 @@ def copick_mesh_to_geometry_data(mesh) -> dict:
     vertices = vertices[:, ::-1]
     if normals is not None:
         normals = normals[:, ::-1]
+    # Reversing all three axes is a reflection that flips face winding;
+    # reverse index order so computed normals point outward.
+    faces = faces[:, ::-1]
 
     o3d_mesh = to_open3d(vertices, faces, normals)
     if not o3d_mesh.has_vertex_normals():
