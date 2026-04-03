@@ -20,7 +20,7 @@ from typing import List, Optional
 import numpy as np
 
 from ..container import DataContainer
-from ..parallel import _init_worker, _wrap_task
+from ..parallel import _init_worker, _wrap_task, _worker_task_id
 from ..widgets.container_list import TreeStateData, TreeState
 
 __all__ = ["Session"]
@@ -388,9 +388,12 @@ class Session:
                 idx = futures[future]
                 try:
                     ret = future.result()
-                    results[idx] = ret["result"]
-                    if ret["warnings"]:
-                        warnings.warn(f"#{idx}: {ret['warnings']}")
+                    if ret.get("error"):
+                        errors.append((idx, RuntimeError(ret["error"])))
+                    else:
+                        results[idx] = ret["result"]
+                        if ret.get("warnings"):
+                            warnings.warn(f"#{idx}: {ret['warnings']}")
                 except Exception as exc:
                     errors.append((idx, exc))
                 progress.advance(task)
@@ -456,10 +459,14 @@ class Session:
                 created.append(new_geom)
 
         if errors:
+            import sys
+
             msgs = [f"#{i}: {e}" for i, e in errors]
-            warnings.warn(
+            error_summary = (
                 f"{len(errors)}/{len(geometries)} failed:\n  " + "\n  ".join(msgs)
             )
+            print(error_summary, file=sys.stderr)
+            warnings.warn(error_summary)
 
         self._last_results = created
         return created
