@@ -30,6 +30,36 @@ from ..stylesheets import (
     QCheckBox_style,
     Colors,
 )
+from ._session import CopickSession
+
+
+def _setup_config_panel(dialog, content_layout):
+    """Add the copick configuration group (config input + browse + connect)."""
+    config_group = QGroupBox("Copick Configuration")
+    config_layout = QHBoxLayout(config_group)
+
+    dialog._config_input = QLineEdit()
+    dialog._config_input.setPlaceholderText("Path to copick config JSON...")
+
+    session = CopickSession.get()
+    if session.config_path:
+        dialog._config_input.setText(session.config_path)
+    else:
+        default_config = os.environ.get("COPICK_CONFIG", "")
+        if default_config:
+            dialog._config_input.setText(default_config)
+
+    browse_button = QPushButton(qta.icon("ph.folder-open", color=Colors.ICON), "")
+    browse_button.setFixedWidth(36)
+    browse_button.clicked.connect(dialog._browse_config)
+
+    dialog._connect_button = QPushButton("Connect")
+    dialog._connect_button.clicked.connect(dialog._connect)
+
+    config_layout.addWidget(dialog._config_input, 1)
+    config_layout.addWidget(browse_button)
+    config_layout.addWidget(dialog._connect_button)
+    content_layout.addWidget(config_group)
 
 
 class CopickBrowserDialog(QDialog):
@@ -71,6 +101,11 @@ class CopickBrowserDialog(QDialog):
             QGroupBox_style + QPushButton_style + QLineEdit_style + QCheckBox_style
         )
 
+        # Auto-populate if session is already connected
+        session = CopickSession.get()
+        if session.is_connected:
+            self._apply_session(session)
+
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -81,27 +116,7 @@ class CopickBrowserDialog(QDialog):
         content_layout.setContentsMargins(20, 20, 20, 10)
         content_layout.setSpacing(12)
 
-        # Config panel
-        config_group = QGroupBox("Copick Configuration")
-        config_layout = QHBoxLayout(config_group)
-
-        self._config_input = QLineEdit()
-        self._config_input.setPlaceholderText("Path to copick config JSON...")
-        default_config = os.environ.get("COPICK_CONFIG", "")
-        if default_config:
-            self._config_input.setText(default_config)
-
-        browse_button = QPushButton(qta.icon("ph.folder-open", color=Colors.ICON), "")
-        browse_button.setFixedWidth(36)
-        browse_button.clicked.connect(self._browse_config)
-
-        self._connect_button = QPushButton("Connect")
-        self._connect_button.clicked.connect(self._connect)
-
-        config_layout.addWidget(self._config_input, 1)
-        config_layout.addWidget(browse_button)
-        config_layout.addWidget(self._connect_button)
-        content_layout.addWidget(config_group)
+        _setup_config_panel(self, content_layout)
 
         # Run selection
         run_group = QGroupBox("Run")
@@ -130,6 +145,16 @@ class CopickBrowserDialog(QDialog):
         main_layout.addWidget(footer)
 
     def _setup_import_panel(self, parent_layout):
+        # Object type filter
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter by object:"))
+        self._object_filter = QComboBox()
+        self._object_filter.addItem("All Objects")
+        self._object_filter.setEnabled(False)
+        self._object_filter.currentTextChanged.connect(self._apply_object_filter)
+        filter_row.addWidget(self._object_filter, 1)
+        parent_layout.addLayout(filter_row)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(scroll.Shape.NoFrame)
@@ -192,6 +217,11 @@ class CopickBrowserDialog(QDialog):
         if not available_types:
             available_types.append("Picks")
         self._type_combo.addItems(available_types)
+
+        # Default to Mesh if mesh data is available
+        if "Mesh" in available_types and self._geometry_types.get("mesh", False):
+            self._type_combo.setCurrentText("Mesh")
+
         self._type_combo.currentTextChanged.connect(self._on_export_type_changed)
         type_row.addWidget(self._type_combo, 1)
         layout.addLayout(type_row)
@@ -205,19 +235,21 @@ class CopickBrowserDialog(QDialog):
         obj_row.addWidget(self._object_combo, 1)
         layout.addLayout(obj_row)
 
-        # User ID
+        # User ID — default "mosaic"
         user_row = QHBoxLayout()
         user_row.addWidget(QLabel("User ID:"))
         self._user_input = QLineEdit()
         self._user_input.setPlaceholderText("User identifier")
+        self._user_input.setText("mosaic")
         user_row.addWidget(self._user_input, 1)
         layout.addLayout(user_row)
 
-        # Session ID
+        # Session ID — default "pipeline"
         session_row = QHBoxLayout()
         session_row.addWidget(QLabel("Session ID:"))
         self._session_input = QLineEdit()
         self._session_input.setPlaceholderText("Session identifier")
+        self._session_input.setText("pipeline")
         session_row.addWidget(self._session_input, 1)
         layout.addLayout(session_row)
 
@@ -275,10 +307,9 @@ class CopickBrowserDialog(QDialog):
             QMessageBox.warning(self, "Error", "Please specify a copick config path.")
             return
 
+        session = CopickSession.get()
         try:
-            from copick import from_file
-
-            self._root = from_file(config_path)
+            session.connect(config_path)
         except ImportError:
             QMessageBox.warning(
                 self,
@@ -292,24 +323,40 @@ class CopickBrowserDialog(QDialog):
             )
             return
 
-        # Populate runs
-        self._runs = list(self._root.runs)
+        self._apply_session(session)
+
+    def _apply_session(self, session):
+        """Populate the dialog from an already-connected session."""
+        self._root = session.root
+        self._runs = session.runs
+
         self._run_combo.setEnabled(True)
+        self._run_combo.blockSignals(True)
         self._run_combo.clear()
         for run in self._runs:
             self._run_combo.addItem(run.name)
+        self._run_combo.blockSignals(False)
 
-        # Populate object names for export
+        if self._mode == "import":
+            # Populate object filter
+            self._object_filter.blockSignals(True)
+            self._object_filter.clear()
+            self._object_filter.addItem("All Objects")
+            for obj in self._root.pickable_objects:
+                self._object_filter.addItem(obj.name)
+            self._object_filter.setEnabled(True)
+            self._object_filter.blockSignals(False)
+
         if self._mode == "export":
             self._object_combo.setEnabled(True)
             self._object_combo.clear()
             for obj in self._root.pickable_objects:
                 self._object_combo.addItem(obj.name)
 
-            if self._root.config.user_id:
-                self._user_input.setText(self._root.config.user_id)
-            if self._root.config.session_id:
-                self._session_input.setText(self._root.config.session_id)
+            # Default to "membrane" if available
+            membrane_idx = self._object_combo.findText("membrane")
+            if membrane_idx >= 0:
+                self._object_combo.setCurrentIndex(membrane_idx)
 
         self._action_button.setEnabled(len(self._runs) > 0)
 
@@ -337,35 +384,50 @@ class CopickBrowserDialog(QDialog):
         self._clear_checkboxes(self._meshes_layout, self._mesh_checkboxes)
         self._clear_checkboxes(self._segs_layout, self._seg_checkboxes)
 
-        # Populate picks
-        self._available_picks = list(run.picks)
+        # Populate picks — sorted by object name then user_id, unchecked
+        self._available_picks = sorted(
+            run.picks,
+            key=lambda p: (p.pickable_object_name.lower(), p.user_id.lower()),
+        )
         for picks in self._available_picks:
             label = f"{picks.pickable_object_name} ({picks.user_id}, session {picks.session_id})"
             cb = QCheckBox(label)
-            cb.setChecked(True)
+            cb.setChecked(False)
+            cb.setProperty("object_name", picks.pickable_object_name)
             self._pick_checkboxes.append(cb)
             self._picks_layout.addWidget(cb)
 
-        # Populate meshes
-        self._available_meshes = list(run.meshes)
+        # Populate meshes — sorted by object name then user_id, unchecked
+        self._available_meshes = sorted(
+            run.meshes,
+            key=lambda m: (m.pickable_object_name.lower(), m.user_id.lower()),
+        )
         for mesh in self._available_meshes:
             label = f"{mesh.pickable_object_name} ({mesh.user_id}, session {mesh.session_id})"
             cb = QCheckBox(label)
-            cb.setChecked(True)
+            cb.setChecked(False)
+            cb.setProperty("object_name", mesh.pickable_object_name)
             self._mesh_checkboxes.append(cb)
             self._meshes_layout.addWidget(cb)
 
-        # Populate segmentations
-        self._available_segmentations = list(run.segmentations)
+        # Populate segmentations — sorted by name then user_id, unchecked
+        self._available_segmentations = sorted(
+            run.segmentations,
+            key=lambda s: (s.name.lower(), s.user_id.lower()),
+        )
         for seg in self._available_segmentations:
             label = (
                 f"{seg.name} (voxel_size={seg.voxel_size}, "
                 f"{seg.user_id}, session {seg.session_id})"
             )
             cb = QCheckBox(label)
-            cb.setChecked(True)
+            cb.setChecked(False)
+            cb.setProperty("object_name", seg.name)
             self._seg_checkboxes.append(cb)
             self._segs_layout.addWidget(cb)
+
+        # Re-apply current filter
+        self._apply_object_filter(self._object_filter.currentText())
 
     def _clear_checkboxes(self, layout, checkbox_list):
         for cb in checkbox_list:
@@ -375,7 +437,18 @@ class CopickBrowserDialog(QDialog):
 
     def _toggle_all(self, checkboxes, checked):
         for cb in checkboxes:
-            cb.setChecked(checked)
+            if not cb.isHidden():
+                cb.setChecked(checked)
+
+    def _apply_object_filter(self, filter_text):
+        """Show/hide checkboxes based on the selected object type filter."""
+        show_all = filter_text == "All Objects"
+        for cb in self._pick_checkboxes:
+            cb.setVisible(show_all or cb.property("object_name") == filter_text)
+        for cb in self._mesh_checkboxes:
+            cb.setVisible(show_all or cb.property("object_name") == filter_text)
+        for cb in self._seg_checkboxes:
+            cb.setVisible(show_all or cb.property("object_name") == filter_text)
 
     def _on_export_type_changed(self, type_text):
         is_seg = type_text == "Segmentation"
@@ -451,3 +524,178 @@ class CopickBrowserDialog(QDialog):
                 result["is_multilabel"] = self._multilabel_check.isChecked()
                 result["uri"] = self._uri_display.text()
             return result
+
+
+class CopickTomogramDialog(QDialog):
+    """Dialog for selecting a copick tomogram to load into the volume viewer."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Load Tomogram from Copick")
+        self.resize(500, 300)
+
+        self._root = None
+        self._runs = []
+        self._voxel_spacings = []
+        self._tomograms = []
+
+        self._setup_ui()
+        self.setStyleSheet(
+            QGroupBox_style + QPushButton_style + QLineEdit_style + QCheckBox_style
+        )
+
+        session = CopickSession.get()
+        if session.is_connected:
+            self._apply_session(session)
+
+    def _setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(20, 20, 20, 10)
+        content_layout.setSpacing(12)
+
+        _setup_config_panel(self, content_layout)
+
+        # Run selection
+        run_group = QGroupBox("Run")
+        run_layout = QHBoxLayout(run_group)
+        self._run_combo = QComboBox()
+        self._run_combo.setEnabled(False)
+        self._run_combo.currentIndexChanged.connect(self._on_run_changed)
+        run_layout.addWidget(self._run_combo)
+        content_layout.addWidget(run_group)
+
+        # Voxel spacing selection
+        settings_group = QGroupBox("Tomogram Settings")
+        settings_layout = QVBoxLayout(settings_group)
+        settings_layout.setSpacing(8)
+
+        vs_row = QHBoxLayout()
+        vs_row.addWidget(QLabel("Voxel Spacing (\u00c5):"))
+        self._vs_combo = QComboBox()
+        self._vs_combo.setEnabled(False)
+        self._vs_combo.currentIndexChanged.connect(self._on_vs_changed)
+        vs_row.addWidget(self._vs_combo, 1)
+        settings_layout.addLayout(vs_row)
+
+        # Tomogram type selection
+        tomo_row = QHBoxLayout()
+        tomo_row.addWidget(QLabel("Tomogram Type:"))
+        self._tomo_combo = QComboBox()
+        self._tomo_combo.setEnabled(False)
+        tomo_row.addWidget(self._tomo_combo, 1)
+        settings_layout.addLayout(tomo_row)
+
+        content_layout.addWidget(settings_group)
+        content_layout.addStretch()
+        main_layout.addWidget(content, 1)
+
+        # Footer
+        footer = DialogFooter(dialog=self, margin=(20, 10, 20, 10))
+        self._action_button = footer.accept_button
+        self._action_button.setText("Load")
+        self._action_button.setIcon(
+            qta.icon("ph.upload", color=Colors.PRIMARY)
+        )
+        self._action_button.setEnabled(False)
+        main_layout.addWidget(footer)
+
+    def _browse_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Copick Config", "", "JSON Files (*.json);;All Files (*)"
+        )
+        if path:
+            self._config_input.setText(path)
+
+    def _connect(self):
+        config_path = self._config_input.text().strip()
+        if not config_path:
+            QMessageBox.warning(self, "Error", "Please specify a copick config path.")
+            return
+
+        session = CopickSession.get()
+        try:
+            session.connect(config_path)
+        except ImportError:
+            QMessageBox.warning(
+                self,
+                "Missing Dependency",
+                "copick is not installed. Install with: pip install mosaic-gui[copick]",
+            )
+            return
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Connection Error", f"Failed to load copick config:\n{e}"
+            )
+            return
+
+        self._apply_session(session)
+
+    def _apply_session(self, session):
+        self._root = session.root
+        self._runs = session.runs
+
+        self._run_combo.setEnabled(True)
+        self._run_combo.blockSignals(True)
+        self._run_combo.clear()
+        for run in self._runs:
+            self._run_combo.addItem(run.name)
+        self._run_combo.blockSignals(False)
+
+        if self._runs:
+            self._on_run_changed(0)
+
+    def _on_run_changed(self, index):
+        if index < 0 or index >= len(self._runs):
+            return
+
+        run = self._runs[index]
+        self._voxel_spacings = sorted(
+            run.voxel_spacings, key=lambda vs: vs.voxel_size
+        )
+
+        self._vs_combo.setEnabled(True)
+        self._vs_combo.blockSignals(True)
+        self._vs_combo.clear()
+        for vs in self._voxel_spacings:
+            self._vs_combo.addItem(str(vs.voxel_size))
+        self._vs_combo.blockSignals(False)
+
+        if self._voxel_spacings:
+            self._on_vs_changed(0)
+
+    def _on_vs_changed(self, index):
+        if index < 0 or index >= len(self._voxel_spacings):
+            return
+
+        vs = self._voxel_spacings[index]
+        self._tomograms = list(vs.tomograms)
+
+        self._tomo_combo.setEnabled(True)
+        self._tomo_combo.clear()
+        for tomo in self._tomograms:
+            self._tomo_combo.addItem(tomo.tomo_type)
+
+        self._action_button.setEnabled(len(self._tomograms) > 0)
+
+    def get_result(self):
+        """Return the selected tomogram details.
+
+        Returns
+        -------
+        dict
+            {"run", "voxel_spacing", "tomogram"}
+        """
+        run_idx = self._run_combo.currentIndex()
+        vs_idx = self._vs_combo.currentIndex()
+        tomo_idx = self._tomo_combo.currentIndex()
+
+        return {
+            "run": self._runs[run_idx] if run_idx >= 0 else None,
+            "voxel_spacing": self._voxel_spacings[vs_idx] if vs_idx >= 0 else None,
+            "tomogram": self._tomograms[tomo_idx] if tomo_idx >= 0 else None,
+        }

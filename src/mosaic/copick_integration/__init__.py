@@ -22,7 +22,19 @@ from ._uri import (
     build_segmentation_uri,
     resolve_segmentation,
 )
-from ._dialog import CopickBrowserDialog
+from ._dialog import CopickBrowserDialog, CopickTomogramDialog
+from ._session import CopickSession
+
+
+def is_copick_available():
+    """Return True if the copick package is installed."""
+    try:
+        import copick  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
 
 __all__ = [
     "copick_picks_to_geometry_data",
@@ -35,4 +47,7 @@ __all__ = [
     "build_segmentation_uri",
     "resolve_segmentation",
     "CopickBrowserDialog",
+    "CopickTomogramDialog",
+    "CopickSession",
+    "is_copick_available",
 ]

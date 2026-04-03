@@ -759,15 +759,21 @@ class App(QMainWindow):
             lambda checked: self.trajectory_dock.setVisible(checked)
         )
 
-        import_copick_action = QAction("Import from Copick...", self)
-        import_copick_action.triggered.connect(self._import_from_copick)
-
-        export_copick_action = QAction("Export to Copick...", self)
-        export_copick_action.triggered.connect(self._export_to_copick)
-
         # Add actions to menus
         file_menu.addAction(add_file_action)
-        file_menu.addAction(import_copick_action)
+
+        try:
+            from .copick_integration import is_copick_available
+
+            _copick_ok = is_copick_available()
+        except ImportError:
+            _copick_ok = False
+
+        if _copick_ok:
+            import_copick_action = QAction("Import from Copick...", self)
+            import_copick_action.triggered.connect(self._import_from_copick)
+            file_menu.addAction(import_copick_action)
+
         file_menu.addMenu(self.recent_menu)
 
         file_menu.addSeparator()
@@ -776,7 +782,10 @@ class App(QMainWindow):
         file_menu.addAction(close_file_action)
 
         file_menu.addSeparator()
-        file_menu.addAction(export_copick_action)
+        if _copick_ok:
+            export_copick_action = QAction("Export to Copick...", self)
+            export_copick_action.triggered.connect(self._export_to_copick)
+            file_menu.addAction(export_copick_action)
         batch_process_action = QAction("Batch Processing", self)
         batch_process_action.triggered.connect(self.open_batch_pipeline)
         batch_process_action.setShortcut("Ctrl+Shift+P")

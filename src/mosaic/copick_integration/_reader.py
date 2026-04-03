@@ -24,6 +24,9 @@ def copick_picks_to_geometry_data(picks) -> dict:
 
     positions, transforms = picks.numpy()
 
+    # Copick stores coordinates as (X, Y, Z), mosaic uses (Z, Y, X).
+    positions = positions[:, ::-1]
+
     quaternions = None
     normals = None
     if picks.trust_orientation and transforms is not None and len(transforms) > 0:
@@ -76,6 +79,12 @@ def copick_mesh_to_geometry_data(mesh) -> dict:
     if tmesh.vertex_normals is not None and len(tmesh.vertex_normals) == len(vertices):
         normals = np.asarray(tmesh.vertex_normals, dtype=np.float64)
 
+    # Copick stores coordinates as (X, Y, Z), mosaic uses numpy axis order
+    # (Z, Y, X for typical MRC / OME-ZARR data).
+    vertices = vertices[:, ::-1]
+    if normals is not None:
+        normals = normals[:, ::-1]
+
     o3d_mesh = to_open3d(vertices, faces, normals)
     if not o3d_mesh.has_vertex_normals():
         o3d_mesh.compute_vertex_normals()
@@ -111,7 +120,8 @@ def copick_segmentation_to_geometries(seg) -> List[dict]:
         Each dict contains points, sampling_rate, color, and meta for creating
         a SegmentationGeometry.
     """
-    data = seg.numpy()
+    # Copick returns (Z, Y, X); transpose to match mosaic's axis order.
+    data = seg.numpy().T
     voxel_size = seg.voxel_size
     sampling_rate = np.array([voxel_size, voxel_size, voxel_size], dtype=np.float32)
 

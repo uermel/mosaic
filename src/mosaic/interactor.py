@@ -461,9 +461,19 @@ class DataContainerInteractor(QObject):
         export_menu.triggered.connect(lambda: self._handle_export())
         context_menu.addAction(export_menu)
 
-        export_copick_action = QAction("Export to Copick...", self.data_list)
-        export_copick_action.triggered.connect(lambda: self._handle_copick_export())
-        context_menu.addAction(export_copick_action)
+        try:
+            from .copick_integration import is_copick_available
+
+            _copick_ok = is_copick_available()
+        except ImportError:
+            _copick_ok = False
+
+        if _copick_ok:
+            export_copick_action = QAction("Export to Copick...", self.data_list)
+            export_copick_action.triggered.connect(
+                lambda: self._handle_copick_export()
+            )
+            context_menu.addAction(export_copick_action)
 
         properties_action = QAction("Properties", self.data_list)
         properties_action.triggered.connect(self._show_properties_dialog)
