@@ -306,9 +306,15 @@ def execute_run(
     from ..commands.repl import MosaicREPL
     from ..commands.session import Session
 
+    import traceback
+
     steps = compile_run(run_config)
     repl = MosaicREPL(session=Session(quiet=True))
     for idx, (op_id, line) in enumerate(steps):
         if verbose:
             report_progress(message=op_id, current=idx, total=len(steps))
-        repl.execute(line)
+        try:
+            repl.execute(line)
+        except Exception:
+            traceback.print_exc()
+            raise
