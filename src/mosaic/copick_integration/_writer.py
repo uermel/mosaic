@@ -115,10 +115,28 @@ def geometry_to_copick_segmentation(
     CopickSegmentation
         The stored copick segmentation object.
     """
+    import zarr
+
     from ..utils import points_to_volume
 
-    points = geometry.points
-    volume = points_to_volume(points, sampling_rate=voxel_size, out_dtype=np.uint8)
+    # Determine the target volume shape from the run's tomograms so the
+    # segmentation covers the same coordinate space.
+    tomo_shape = None
+    for vs in run.voxel_spacings:
+        if abs(vs.voxel_size - voxel_size) < 1e-3:
+            tomos = list(vs.tomograms)
+            if tomos:
+                group = zarr.open(tomos[0].zarr(), mode="r")
+                tomo_shape = group["0"].shape
+            break
+
+    # Mosaic stores coordinates with axes reversed relative to copick's
+    # zarr convention (import applies .T / [::-1]).  Reverse the columns
+    # so the volume axes match the (Z, Y, X) zarr layout.
+    points = geometry.points[:, ::-1]
+    volume = points_to_volume(
+        points, sampling_rate=voxel_size, shape=tomo_shape, out_dtype=np.uint8,
+    )
 
     seg = run.new_segmentation(
         voxel_size=voxel_size,

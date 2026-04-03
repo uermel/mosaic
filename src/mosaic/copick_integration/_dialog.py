@@ -3,6 +3,7 @@
 import os
 
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor, QIcon, QPixmap
 from qtpy.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -31,6 +32,15 @@ from ..stylesheets import (
     Colors,
 )
 from ._session import CopickSession
+
+
+def _color_icon(rgba, size=12):
+    """Create a small square QIcon from a copick RGBA color tuple."""
+    if rgba is None:
+        rgba = (128, 128, 128, 255)
+    pm = QPixmap(size, size)
+    pm.fill(QColor(*rgba[:4]))
+    return QIcon(pm)
 
 
 def _setup_config_panel(dialog, content_layout):
@@ -353,16 +363,16 @@ class CopickBrowserDialog(QDialog):
             self._object_filter.blockSignals(True)
             self._object_filter.clear()
             self._object_filter.addItem("All Objects")
-            for obj in self._root.pickable_objects:
-                self._object_filter.addItem(obj.name)
+            for obj in sorted(self._root.pickable_objects, key=lambda o: o.name):
+                self._object_filter.addItem(_color_icon(obj.color), obj.name)
             self._object_filter.setEnabled(True)
             self._object_filter.blockSignals(False)
 
         if self._mode == "export":
             self._object_combo.setEnabled(True)
             self._object_combo.clear()
-            for obj in self._root.pickable_objects:
-                self._object_combo.addItem(obj.name)
+            for obj in sorted(self._root.pickable_objects, key=lambda o: o.name):
+                self._object_combo.addItem(_color_icon(obj.color), obj.name)
 
             # Default to "membrane" if available
             membrane_idx = self._object_combo.findText("membrane")

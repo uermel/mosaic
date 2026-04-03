@@ -23,12 +23,14 @@ from ._uri import (
     resolve_segmentation,
 )
 from ._dialog import CopickBrowserDialog, CopickTomogramDialog
+from ._setup_dialog import CopickSetupDialog
 from ._session import CopickSession
 from ._actions import (
     ImportResult,
     TomogramResult,
     export_geometries,
     show_import_dialog,
+    show_setup_dialog,
     show_tomogram_dialog,
 )
 
@@ -63,7 +65,9 @@ __all__ = [
     "HAS_COPICK",
     "show_import_dialog",
     "export_geometries",
+    "show_setup_dialog",
     "show_tomogram_dialog",
+    "CopickSetupDialog",
     "ImportResult",
     "TomogramResult",
 ]

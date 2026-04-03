@@ -14,6 +14,7 @@ import numpy as np
 from qtpy.QtWidgets import QDialog, QMessageBox
 
 from ._dialog import CopickBrowserDialog, CopickTomogramDialog
+from ._setup_dialog import CopickSetupDialog
 from ._reader import (
     copick_mesh_to_geometry_data,
     copick_picks_to_geometry_data,
@@ -192,3 +193,15 @@ def show_tomogram_dialog(parent) -> Optional[TomogramResult]:
         voxel_size=voxel_size,
         source_path=f"copick://{tomogram.tomo_type}",
     )
+
+
+def show_setup_dialog(parent) -> Optional[str]:
+    """Open the copick project setup dialog.
+
+    Returns the path to the created config file on success, or ``None``
+    if the user cancels.
+    """
+    dialog = CopickSetupDialog(parent=parent)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+    return dialog.get_config_path()
